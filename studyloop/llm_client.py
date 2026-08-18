@@ -7,7 +7,7 @@ from groq import Groq
 load_dotenv()
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-20b" 
 
 
 def chat(
