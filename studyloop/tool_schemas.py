@@ -4,10 +4,12 @@ TOOLS = [
         "function": {
             "name": "schedule",
             "description": (
-                "Build or rebuild a day-by-day study plan for all current topics, "
-                "respecting the exam date and daily hour budget. Call this after "
-                "topics are parsed, and again any time replan decides hours should shift."
-            ),
+                "Build or rebuild the student's concrete study schedule. "
+                "The schedule must contain study sessions, revision sessions "
+                "based on SM-2 review dates, and 15-minute quizzes. "
+                "Call this after syllabus parsing and after quiz results change "
+                "the student's mastery state."
+                        ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -147,11 +149,13 @@ TOOLS = [
         "function": {
             "name": "replan",
             "description": (
-                "Re-derive the study plan using all quiz history so far: "
-                "shift hours away from mastered topics toward weak ones, "
-                "and slot in SM-2 review dates for topics due for resurfacing. "
-                "Call this before starting the next study session."
-            ),
+                "Rebuild the student's adaptive schedule after new learning "
+                "evidence is available. Weak topics should receive more study "
+                "and revision time, while strong or mastered topics should be "
+                "spaced further apart according to their SM-2 state. "
+                "The resulting schedule must include concrete revision and "
+                "quiz activities."
+                ),
             "parameters": {
                 "type": "object",
                 "properties": {

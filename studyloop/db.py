@@ -6,43 +6,83 @@ DB_PATH = Path(__file__).parent.parent / "data" / "studyloop.db"
 
 
 def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     with get_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS topics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                difficulty INTEGER NOT NULL, -- 1 (easy) to 5 (hard), set by the LLM
-                est_hours REAL NOT NULL, -- initial time estimate
-                repetitions INTEGER DEFAULT 0, -- SM-2 state
-                ease_factor REAL DEFAULT 2.5, -- SM-2 state
-                interval_days INTEGER DEFAULT 1, -- SM-2 state
-                next_review_date TEXT, -- ISO date string
-                mastered INTEGER DEFAULT 0 -- 0/1
+                difficulty INTEGER NOT NULL,
+                est_hours REAL NOT NULL,
+                repetitions INTEGER DEFAULT 0,
+                ease_factor REAL DEFAULT 2.5,
+                interval_days INTEGER DEFAULT 1,
+                next_review_date TEXT,
+                mastered INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS plan (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 topic_id INTEGER NOT NULL,
-                study_date TEXT NOT NULL, -- ISO date string
+                study_date TEXT NOT NULL,
                 planned_hours REAL NOT NULL,
+                activity_type TEXT DEFAULT 'study',
+                scheduled_at TEXT,
                 completed INTEGER DEFAULT 0,
+                notification_sent INTEGER DEFAULT 0,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
             );
 
             CREATE TABLE IF NOT EXISTS quiz_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 topic_id INTEGER NOT NULL,
-                quality INTEGER NOT NULL, -- 0-5 SM-2 quality score
+                quality INTEGER NOT NULL,
                 taken_at TEXT NOT NULL,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
             );
 
             CREATE TABLE IF NOT EXISTS exam (
-                id INTEGER PRIMARY KEY CHECK (id = 1), -- singleton row
+                id INTEGER PRIMARY KEY CHECK (id = 1),
                 exam_date TEXT NOT NULL,
                 daily_hours REAL NOT NULL
             );
         """)
+
+        # ------------------------------------------------------------
+        # Database migration for existing installations.
+        # ------------------------------------------------------------
+
+        columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(plan)"
+            ).fetchall()
+        }
+
+        if "activity_type" not in columns:
+            conn.execute(
+                """
+                ALTER TABLE plan
+                ADD COLUMN activity_type TEXT DEFAULT 'study'
+                """
+            )
+
+        if "scheduled_at" not in columns:
+            conn.execute(
+                """
+                ALTER TABLE plan
+                ADD COLUMN scheduled_at TEXT
+                """
+            )
+
+        if "notification_sent" not in columns:
+            conn.execute(
+                """
+                ALTER TABLE plan
+                ADD COLUMN notification_sent INTEGER DEFAULT 0
+                """
+            )
 
 
 @contextmanager
@@ -99,29 +139,68 @@ def clear_plan():
         conn.execute("DELETE FROM plan")
 
 
+def clear_future_plan():
+    """
+    Remove future activities so the agent can rebuild
+    the schedule after a quiz result.
+
+    Historical completed activities are preserved.
+    """
+    with get_conn() as conn:
+        conn.execute(
+            """
+            DELETE FROM plan
+            WHERE completed = 0
+            """
+        )
+
 def insert_plan_row(
     topic_id: int,
     study_date: str,
     planned_hours: float,
+    activity_type: str = "study",
+    scheduled_at: str | None = None,
 ):
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO plan (topic_id, study_date, planned_hours) "
-            "VALUES (?, ?, ?)",
-            (topic_id, study_date, planned_hours),
+            """
+            INSERT INTO plan (
+                topic_id,
+                study_date,
+                planned_hours,
+                activity_type,
+                scheduled_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                topic_id,
+                study_date,
+                planned_hours,
+                activity_type,
+                scheduled_at,
+            ),
         )
 
 
 def get_plan() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT
                 plan.*,
-                topics.name AS topic_name
+                topics.name AS topic_name,
+                topics.difficulty,
+                topics.mastered,
+                topics.next_review_date
             FROM plan
-            JOIN topics ON plan.topic_id = topics.id
-            ORDER BY study_date
-        """).fetchall()
+            JOIN topics
+                ON plan.topic_id = topics.id
+            ORDER BY
+                plan.study_date,
+                plan.scheduled_at
+            """
+        ).fetchall()
 
         return [dict(r) for r in rows]
 
@@ -186,3 +265,54 @@ def get_quiz_history(topic_id: int | None = None) -> list[dict]:
             ).fetchall()
 
         return [dict(r) for r in rows]
+
+def get_due_activities(now_iso: str) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                plan.*,
+                topics.name AS topic_name
+            FROM plan
+            JOIN topics
+                ON plan.topic_id = topics.id
+            WHERE
+                plan.scheduled_at <= ?
+                AND plan.completed = 0
+                AND plan.notification_sent = 0
+            ORDER BY plan.scheduled_at
+            """,
+            (now_iso,),
+        ).fetchall()
+
+        return [dict(r) for r in rows]
+
+
+def mark_notification_sent(plan_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE plan
+            SET notification_sent = 1
+            WHERE id = ?
+            """,
+            (plan_id,),
+        )
+
+
+def mark_plan_completed(plan_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE plan
+            SET completed = 1
+            WHERE id = ?
+            """,
+            (plan_id,),
+        )
+
+def clear_topics():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM quiz_results")
+        conn.execute("DELETE FROM plan")
+        conn.execute("DELETE FROM topics")

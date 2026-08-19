@@ -1,6 +1,6 @@
 import streamlit as st
-from datetime import date
-
+from datetime import date, datetime
+from streamlit_autorefresh import st_autorefresh
 from pypdf import PdfReader
 
 from studyloop import db
@@ -10,6 +10,55 @@ from studyloop.tools import evaluate_quiz, parse_syllabus
 
 
 init_db()
+# Check the schedule every 30 seconds.
+st_autorefresh(
+    interval=30_000,
+    key="studyloop_scheduler",
+)
+
+def show_due_notifications():
+    """
+    Display in-app notifications for activities whose scheduled
+    time has arrived.
+    """
+
+    now = datetime.now().isoformat()
+
+    due_activities = db.get_due_activities(now)
+
+    for activity in due_activities:
+
+        activity_type = activity["activity_type"]
+        topic = activity["topic_name"]
+
+        if activity_type == "quiz":
+            message = (
+                f"Quiz due: {topic}. "
+                f"You have 15 minutes for this quiz."
+            )
+
+        elif activity_type == "revision":
+            message = (
+                f"Revision time: {topic}. "
+                f"Review this topic according to your study plan."
+            )
+
+        else:
+            message = (
+                f"Study session: {topic}. "
+                f"Start your scheduled study session."
+            )
+
+        st.toast(
+            message,
+            icon="📚",
+        )
+
+        db.mark_notification_sent(
+            activity["id"]
+        )
+
+show_due_notifications()
 
 st.set_page_config(
     page_title="StudyLoop",
@@ -93,17 +142,87 @@ tab_plan, tab_quiz, tab_trace = st.tabs(
 # --------------------------------------------------------------------
 
 with tab_plan:
+
+    st.subheader("Study Plan")
+
     plan = db.get_plan()
 
     if not plan:
+
         st.info(
             "Upload a syllabus and build a plan from the sidebar."
         )
+
     else:
-        st.dataframe(
-            plan,
-            use_container_width=True,
-        )
+
+        for item in plan:
+
+            activity_type = item["activity_type"]
+
+            if activity_type == "study":
+                label = "Study"
+
+            elif activity_type == "revision":
+                label = "Revision"
+
+            elif activity_type == "quiz":
+                label = "Quiz"
+
+            else:
+                label = activity_type.title()
+
+            scheduled_at = item.get("scheduled_at")
+
+            if scheduled_at:
+                try:
+                    dt = datetime.fromisoformat(
+                        scheduled_at
+                    )
+                    time_text = dt.strftime(
+                        "%I:%M %p"
+                    )
+                except ValueError:
+                    time_text = "Unknown time"
+            else:
+                time_text = "No time"
+
+            duration = int(
+                item["planned_hours"] * 60
+            )
+
+            status = (
+                "Completed"
+                if item["completed"]
+                else "Pending"
+            )
+
+            with st.container(border=True):
+
+                st.markdown(
+                    f"### {label}: {item['topic_name']}"
+                )
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.write(
+                        f"**Date:** {item['study_date']}"
+                    )
+
+                with col2:
+                    st.write(
+                        f"**Time:** {time_text}"
+                    )
+
+                with col3:
+                    st.write(
+                        f"**Duration:** {duration} min"
+                    )
+
+                with col4:
+                    st.write(
+                        f"**Status:** {status}"
+                    )
 
 
 # --------------------------------------------------------------------
