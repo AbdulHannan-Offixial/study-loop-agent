@@ -8,9 +8,17 @@ from studyloop.agent import run_agent_turn
 from studyloop.db import init_db
 from studyloop.tools import evaluate_quiz, parse_syllabus
 
+st.set_page_config(
+    page_title="StudyLoop",
+    page_icon="📚",
+    layout="wide",
+)
+
+st.title("StudyLoop — Adaptive Exam-Prep Agent")
 
 init_db()
 # Check the schedule every 30 seconds.
+
 st_autorefresh(
     interval=30_000,
     key="studyloop_scheduler",
@@ -60,13 +68,7 @@ def show_due_notifications():
 
 show_due_notifications()
 
-st.set_page_config(
-    page_title="StudyLoop",
-    page_icon="📚",
-    layout="wide",
-)
 
-st.title("StudyLoop — Adaptive Exam-Prep Agent")
 
 
 # --------------------------------------------------------------------
