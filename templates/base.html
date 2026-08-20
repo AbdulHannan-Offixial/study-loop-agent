@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        {% block title %}StudyLoop{% endblock %}
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+
+    <div class="app-shell">
+
+        <!-- ==========================================
+             Sidebar
+        =========================================== -->
+
+        <aside class="sidebar">
+
+            <a
+                href="{{ url_for('dashboard') }}"
+                class="brand"
+            >
+                <div class="brand-icon">
+                    S
+                </div>
+
+                <div>
+                    <div class="brand-name">
+                        StudyLoop
+                    </div>
+
+                    <div class="brand-subtitle">
+                        Adaptive Exam Prep
+                    </div>
+                </div>
+            </a>
+
+
+            <!-- Navigation -->
+
+            <div class="sidebar-label">
+                WORKSPACE
+            </div>
+
+            <nav class="navigation">
+
+                <a
+                    href="{{ url_for('dashboard') }}"
+                    class="nav-item {% if request.endpoint == 'dashboard' %}active{% endif %}"
+                >
+                    <span class="nav-icon">⌂</span>
+                    <span>Dashboard</span>
+                </a>
+
+                <a
+                    href="{{ url_for('quiz_center') }}"
+                    class="nav-item {% if request.endpoint == 'quiz_center' %}active{% endif %}"
+                >
+                    <span class="nav-icon">✦</span>
+                    <span>Quiz Center</span>
+                </a>
+
+                <a
+                    href="{{ url_for('quiz_results') }}"
+                    class="nav-item {% if request.endpoint == 'quiz_results' %}active{% endif %}"
+                >
+                    <span class="nav-icon">◉</span>
+                    <span>Results</span>
+                </a>
+
+                <a
+                    href="{{ url_for('agent_trace') }}"
+                    class="nav-item {% if request.endpoint == 'agent_trace' %}active{% endif %}"
+                >
+                    <span class="nav-icon">⌘</span>
+                    <span>Agent Trace</span>
+                </a>
+
+            </nav>
+
+
+            <!-- Sidebar bottom -->
+
+            <div class="sidebar-bottom">
+
+                <div class="sidebar-status">
+
+                    <div class="status-dot"></div>
+
+                    <div>
+                        <div class="status-title">
+                            Adaptive Agent
+                        </div>
+
+                        <div class="status-text">
+                            Ready to plan
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </aside>
+
+
+        <!-- ==========================================
+             Main Application
+        =========================================== -->
+
+        <main class="main-content">
+
+            <!-- Top bar -->
+
+            <header class="topbar">
+
+                <div>
+                    <div class="topbar-page">
+                        {% block page_label %}
+                        STUDY WORKSPACE
+                        {% endblock %}
+                    </div>
+
+                    <h1 class="topbar-title">
+                        {% block page_title %}
+                        Dashboard
+                        {% endblock %}
+                    </h1>
+                </div>
+
+
+                <div class="topbar-right">
+
+                    <div class="today-date">
+                        <span class="calendar-icon">
+                            ◫
+                        </span>
+
+                        {{ today if today else "" }}
+                    </div>
+
+                </div>
+
+            </header>
+
+
+            <!-- Flash messages -->
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+
+                {% if messages %}
+
+                    <div class="flash-container">
+
+                        {% for category, message in messages %}
+
+                            <div
+                                class="flash-message {{ category }}"
+                            >
+
+                                {% if category == "success" %}
+
+                                    <span>✓</span>
+
+                                {% else %}
+
+                                    <span>!</span>
+
+                                {% endif %}
+
+                                <span>
+                                    {{ message }}
+                                </span>
+
+                            </div>
+
+                        {% endfor %}
+
+                    </div>
+
+                {% endif %}
+
+            {% endwith %}
+
+
+            <!-- Page content -->
+
+            <div class="page-content">
+
+                {% block content %}
+                {% endblock %}
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+    <script
+        src="{{ url_for('static', filename='js/app.js') }}"
+    ></script>
+
+    {% block scripts %}
+    {% endblock %}
+
+</body>
+</html>

@@ -1,5 +1,4 @@
-streamlit
 pypdf
 python-dotenv
 groq
-streamlit-autorefresh
+flask

@@ -1,0 +1,773 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+StudyLoop — Dashboard
+{% endblock %}
+
+
+{% block page_label %}
+EXAM PREPARATION
+{% endblock %}
+
+
+{% block page_title %}
+Your Study Dashboard
+{% endblock %}
+
+
+{% block content %}
+
+
+<!-- ==========================================
+     Hero Section
+========================================== -->
+
+<section class="dashboard-hero">
+
+    <div class="hero-content">
+
+        <div class="hero-eyebrow">
+            ADAPTIVE LEARNING SYSTEM
+        </div>
+
+        <h2>
+            Prepare smarter for your exam.
+        </h2>
+
+        <p>
+            Upload your syllabus, set your available study
+            times, and let StudyLoop create an adaptive
+            study, revision, and quiz schedule.
+        </p>
+
+    </div>
+
+
+    <div class="hero-stat">
+
+        <div class="hero-stat-value">
+            {{ grouped_plan|length }}
+        </div>
+
+        <div class="hero-stat-label">
+            Planned days
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ==========================================
+     Main Dashboard Grid
+========================================== -->
+
+<div class="dashboard-grid">
+
+
+    <!-- ======================================
+         Left Side
+    ====================================== -->
+
+    <div class="dashboard-main">
+
+
+        <!-- Exam setup -->
+
+        <section class="panel">
+
+            <div class="panel-header">
+
+                <div>
+
+                    <div class="section-eyebrow">
+                        STEP 1
+                    </div>
+
+                    <h2>
+                        Exam Setup
+                    </h2>
+
+                    <p>
+                        Upload the syllabus for the exam you
+                        want to prepare for.
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <form
+                action="{{ url_for('create_plan') }}"
+                method="POST"
+                enctype="multipart/form-data"
+                id="plan-form"
+            >
+
+
+                <!-- Exam date -->
+
+                <div class="form-group">
+
+                    <label for="exam_date">
+                        Exam date
+                    </label>
+
+                    <input
+                        type="date"
+                        id="exam_date"
+                        name="exam_date"
+                        required
+                    >
+
+                </div>
+
+
+                <!-- Upload -->
+
+                <div class="form-group">
+
+                    <label for="syllabus">
+                        Course syllabus
+                    </label>
+
+
+                    <label
+                        for="syllabus"
+                        class="upload-zone"
+                    >
+
+                        <div class="upload-icon">
+                            ↑
+                        </div>
+
+                        <div class="upload-content">
+
+                            <strong>
+                                Upload your syllabus
+                            </strong>
+
+                            <span>
+                                PDF or TXT file
+                            </span>
+
+                        </div>
+
+                        <div class="upload-button">
+                            Choose file
+                        </div>
+
+                    </label>
+
+
+                    <input
+                        type="file"
+                        id="syllabus"
+                        name="syllabus"
+                        accept=".pdf,.txt"
+                        required
+                        hidden
+                    >
+
+
+                    <div
+                        id="selected-file"
+                        class="selected-file hidden"
+                    ></div>
+
+                </div>
+
+
+                <!-- Plan button -->
+
+                <button
+                    type="submit"
+                    class="primary-button full-button"
+                    id="plan-button"
+                >
+
+                    <span>
+                        Build My Exam Plan
+                    </span>
+
+                    <span class="button-arrow">
+                        →
+                    </span>
+
+                </button>
+
+
+                <div class="form-hint">
+
+                    Upload your syllabus and save your weekly
+                    study times. StudyLoop will automatically
+                    create study sessions, revisions, and quizzes.
+
+                </div>
+
+            </form>
+
+        </section>
+
+
+
+        <!-- ======================================
+             Study Plan
+        ====================================== -->
+
+        <section class="plan-section">
+
+            <div class="section-header-row">
+
+                <div>
+
+                    <div class="section-eyebrow">
+                        YOUR SCHEDULE
+                    </div>
+
+                    <h2>
+                        Study Plan
+                    </h2>
+
+                </div>
+
+
+                {% if grouped_plan %}
+
+                    <div class="plan-count">
+                        {{ grouped_plan|length }} days planned
+                    </div>
+
+                {% endif %}
+
+            </div>
+
+
+            {% if not grouped_plan %}
+
+                <div class="empty-plan">
+
+                    <div class="empty-icon">
+                        📚
+                    </div>
+
+                    <h3>
+                        Your plan is waiting
+                    </h3>
+
+                    <p>
+                        Upload your syllabus and set your
+                        available study times to generate your
+                        personalized exam-preparation schedule.
+                    </p>
+
+                </div>
+
+
+            {% else %}
+
+
+                {% for date_key, day in grouped_plan.items() %}
+
+                    <div class="plan-day">
+
+
+                        <div class="plan-date">
+
+                            <div class="date-line"></div>
+
+                            <h3>
+                                {{ day.formatted_date }}
+                            </h3>
+
+                            <div class="date-line"></div>
+
+                        </div>
+
+
+                        <div class="activities-list">
+
+
+                            {% for item in day.activities %}
+
+
+                                <article
+                                    class="activity-card activity-{{ item.activity_type }}"
+                                >
+
+
+                                    <div class="activity-time">
+
+                                        {{ item.formatted_time }}
+
+                                    </div>
+
+
+                                    <div class="activity-body">
+
+
+                                        <div
+                                            class="activity-badge badge-{{ item.activity_type }}"
+                                        >
+
+                                            {{ item.badge }}
+
+                                        </div>
+
+
+                                        <h4>
+                                            {{ item.topic_name }}
+                                        </h4>
+
+
+                                        <p>
+                                            {{ item.description }}
+                                        </p>
+
+
+                                        <div class="activity-details">
+
+                                            <span>
+                                                ⏱
+                                                {{ item.duration_minutes }}
+                                                minutes
+                                            </span>
+
+
+                                            {% if item.completed %}
+
+                                                <span
+                                                    class="completed-label"
+                                                >
+                                                    ✓ Completed
+                                                </span>
+
+                                            {% endif %}
+
+                                        </div>
+
+                                    </div>
+
+
+                                    {% if item.activity_type == "quiz" %}
+
+                                        <a
+                                            href="{{ url_for('start_quiz', plan_id=item.id) }}"
+                                            class="quiz-button"
+                                        >
+
+                                            Take Quiz
+                                            <span>→</span>
+
+                                        </a>
+
+                                    {% endif %}
+
+
+                                </article>
+
+
+                            {% endfor %}
+
+                        </div>
+
+                    </div>
+
+                {% endfor %}
+
+
+            {% endif %}
+
+
+        </section>
+
+
+    </div>
+
+
+
+    <!-- ======================================
+         Right Side
+    ====================================== -->
+
+    <aside class="dashboard-side">
+
+
+        <!-- Study times -->
+
+        <section class="side-panel">
+
+            <div class="side-panel-header">
+
+                <div>
+
+                    <div class="section-eyebrow">
+                        STEP 2
+                    </div>
+
+                    <h3>
+                        Weekly Study Times
+                    </h3>
+
+                </div>
+
+            </div>
+
+
+            <p class="side-description">
+
+                Select the actual times when you are available.
+                The planner will schedule activities inside
+                these windows.
+
+            </p>
+
+
+            <form
+                action="{{ url_for('save_study_times') }}"
+                method="POST"
+                id="study-times-form"
+            >
+
+
+                {% set day_names = [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday"
+                ] %}
+
+
+                {% for weekday in range(7) %}
+
+
+                    {% set matching_slots = study_slots
+                        | selectattr("weekday", "equalto", weekday)
+                        | list
+                    %}
+
+
+                    {% set slot = matching_slots[0]
+                        if matching_slots
+                        else none
+                    %}
+
+
+                    <div class="day-slot">
+
+
+                        <div class="day-slot-top">
+
+                            <label class="day-toggle">
+
+                                <input
+                                    type="checkbox"
+                                    name="enabled_{{ weekday }}"
+                                    id="enabled_{{ weekday }}"
+                                    value="1"
+
+                                    {% if slot %}
+                                    checked
+                                    {% endif %}
+                                >
+
+                                <span class="toggle-check"></span>
+
+                                <span class="day-name">
+
+                                    {{ day_names[weekday] }}
+
+                                </span>
+
+                            </label>
+
+
+                        </div>
+
+
+                        <div
+                            class="time-fields {% if not slot %}time-fields-disabled{% endif %}"
+                            id="time-fields-{{ weekday }}"
+                        >
+
+
+                            <div class="time-group">
+
+                                <label>
+                                    From
+                                </label>
+
+                                <input
+                                    type="time"
+                                    name="start_{{ weekday }}"
+                                    value="{{ slot.start_time if slot else '18:00' }}"
+                                >
+
+                            </div>
+
+
+                            <div class="time-divider">
+
+                                →
+
+                            </div>
+
+
+                            <div class="time-group">
+
+                                <label>
+                                    To
+                                </label>
+
+                                <input
+                                    type="time"
+                                    name="end_{{ weekday }}"
+                                    value="{{ slot.end_time if slot else '20:00' }}"
+                                >
+
+                            </div>
+
+
+                        </div>
+
+                    </div>
+
+
+                {% endfor %}
+
+
+                <button
+                    type="submit"
+                    class="secondary-button full-button"
+                >
+
+                    Save Study Times
+
+                </button>
+
+
+            </form>
+
+        </section>
+
+
+
+        <!-- Exam information -->
+
+        <section class="side-panel exam-card">
+
+
+            <div class="section-eyebrow">
+                EXAM STATUS
+            </div>
+
+
+            {% if exam %}
+
+                <h3>
+                    Exam Scheduled
+                </h3>
+
+                <p class="exam-date-value">
+
+                    {{ exam.exam_date }}
+
+                </p>
+
+                <p class="side-description">
+
+                    Your plan is being organized around
+                    this examination date.
+
+                </p>
+
+
+            {% else %}
+
+                <h3>
+                    No Exam Yet
+                </h3>
+
+                <p class="side-description">
+
+                    Select your examination date to begin
+                    planning your preparation.
+
+                </p>
+
+            {% endif %}
+
+
+        </section>
+
+
+
+        <!-- Upcoming quiz -->
+
+        <section class="side-panel">
+
+            <div class="section-eyebrow">
+                NEXT QUIZ
+            </div>
+
+
+            {% if upcoming_quizzes %}
+
+
+                {% set next_quiz = upcoming_quizzes[0] %}
+
+
+                <h3>
+                    {{ next_quiz.topic_name }}
+                </h3>
+
+
+                <p class="next-quiz-meta">
+
+                    15-minute knowledge check
+
+                </p>
+
+
+                <a
+                    href="{{ url_for('quiz_center') }}"
+                    class="text-link"
+                >
+
+                    Open Quiz Center
+                    →
+
+                </a>
+
+
+            {% else %}
+
+
+                <h3>
+                    No quiz scheduled
+                </h3>
+
+
+                <p class="side-description">
+
+                    Your upcoming quiz will appear here
+                    after your study plan is created.
+
+                </p>
+
+
+            {% endif %}
+
+
+        </section>
+
+
+    </aside>
+
+</div>
+
+
+{% endblock %}
+
+
+{% block scripts %}
+
+<script>
+
+    // ==============================================
+    // Show selected syllabus filename
+    // ==============================================
+
+    const syllabusInput =
+        document.getElementById("syllabus");
+
+    const selectedFile =
+        document.getElementById("selected-file");
+
+
+    if (syllabusInput) {
+
+        syllabusInput.addEventListener(
+            "change",
+            function () {
+
+                if (
+                    this.files &&
+                    this.files.length > 0
+                ) {
+
+                    selectedFile.textContent =
+                        "Selected: " +
+                        this.files[0].name;
+
+                    selectedFile.classList.remove(
+                        "hidden"
+                    );
+
+                }
+
+            }
+        );
+
+    }
+
+
+    // ==============================================
+    // Enable / disable study time fields
+    // ==============================================
+
+    for (
+        let weekday = 0;
+        weekday < 7;
+        weekday++
+    ) {
+
+        const checkbox =
+            document.getElementById(
+                `enabled_${weekday}`
+            );
+
+        const fields =
+            document.getElementById(
+                `time-fields-${weekday}`
+            );
+
+
+        if (
+            checkbox &&
+            fields
+        ) {
+
+            checkbox.addEventListener(
+                "change",
+                function () {
+
+                    if (this.checked) {
+
+                        fields.classList.remove(
+                            "time-fields-disabled"
+                        );
+
+                    } else {
+
+                        fields.classList.add(
+                            "time-fields-disabled"
+                        );
+
+                    }
+
+                }
+            );
+
+        }
+
+    }
+
+</script>
+
+{% endblock %}
