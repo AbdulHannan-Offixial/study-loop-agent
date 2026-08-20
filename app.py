@@ -16,7 +16,7 @@ from pypdf import PdfReader
 from studyloop import db
 from studyloop.agent import run_agent_turn
 from studyloop.db import init_db
-from studyloop.tools import evaluate_quiz, parse_syllabus
+from studyloop.tools import evaluate_quiz, parse_syllabus, sm2_update
 
 
 # --------------------------------------------------
@@ -433,33 +433,59 @@ def save_study_times():
         url_for("dashboard")
     )
 
-
 @app.route("/quiz")
 def quiz_center():
-    """
-    Show scheduled quizzes and previous quiz results.
-    """
 
     topics = db.get_all_topics()
 
-    upcoming_quizzes = (
-        db.get_upcoming_quizzes()
-    )
+    for topic in topics:
 
-    quiz_topic = session.get(
-        "quiz_topic"
-    )
+        topic["history"] = db.get_quiz_history(
+            topic["id"]
+        )
 
-    current_quiz = session.get(
-        "current_quiz"
-    )
+    upcoming_quizzes = db.get_upcoming_quizzes()
+
+    for quiz in upcoming_quizzes:
+
+        scheduled_at = quiz.get(
+            "scheduled_at"
+        )
+
+        if scheduled_at:
+
+            try:
+
+                dt = datetime.fromisoformat(
+                    scheduled_at
+                )
+
+                quiz["formatted_time"] = dt.strftime(
+                    "%A, %d %B %Y • %I:%M %p"
+                )
+
+            except ValueError:
+
+                quiz["formatted_time"] = (
+                    quiz["study_date"]
+                )
+
+        else:
+
+            quiz["formatted_time"] = (
+                quiz["study_date"]
+            )
+
+
     return render_template(
-    "quiz.html",
-    topics=topics,
-    upcoming_quizzes=upcoming_quizzes,
-    quiz_topic=quiz_topic,
-    current_quiz=current_quiz,
-    today=date.today().strftime("%A, %d %B %Y"),
+        "quiz.html",
+        topics=topics,
+        upcoming_quizzes=upcoming_quizzes,
+        quiz_topic=session.get("quiz_topic"),
+        current_quiz=session.get("current_quiz"),
+        today=date.today().strftime(
+            "%A, %d %B %Y"
+        ),
     )
 
 
@@ -610,28 +636,34 @@ def generate_quiz():
         )
 
 
-@app.route(
-    "/quiz/submit",
-    methods=["POST"],
-)
+@app.route("/quiz/submit", methods=["POST"])
 def submit_quiz():
-    """
-    Evaluate the quiz, save the result,
-    and trigger adaptive replanning.
-    """
+
+    # ------------------------------------------
+    # Get the currently active quiz
+    # ------------------------------------------
+
+    current_quiz = session.get(
+        "current_quiz"
+    )
 
     quiz_topic = session.get(
         "quiz_topic"
     )
 
-    quiz = session.get(
-        "current_quiz"
+    quiz_plan_id = session.get(
+        "quiz_plan_id"
     )
 
-    if not quiz_topic or not quiz:
+
+    # ------------------------------------------
+    # Safety check
+    # ------------------------------------------
+
+    if not current_quiz or not quiz_topic:
 
         flash(
-            "There is no active quiz.",
+            "There is no active quiz to submit.",
             "error",
         )
 
@@ -639,36 +671,35 @@ def submit_quiz():
             url_for("quiz_center")
         )
 
-    try:
 
-        student_answers = {}
+    # ------------------------------------------
+    # Collect student answers
+    #
+    # Your evaluate_quiz() function expects:
+    #
+    # {
+    #     "1": answer,
+    #     "2": answer,
+    #     "3": answer
+    # }
+    # ------------------------------------------
 
-        for index, question in enumerate(
-            quiz,
-            start=1,
-        ):
+    student_answers = {}
 
-            answer = request.form.get(
-                f"question_{index}"
-            )
+    for index, question in enumerate(
+        current_quiz,
+        start=1,
+    ):
 
-            student_answers[
-                str(index)
-            ] = answer
-
-        evaluation = evaluate_quiz(
-            topic_name=quiz_topic,
-            questions=quiz,
-            student_answers=student_answers,
+        answer_value = request.form.get(
+            f"answer_{index - 1}"
         )
 
-        if evaluation["status"] != "ok":
+
+        if answer_value is None:
 
             flash(
-                evaluation.get(
-                    "message",
-                    "Quiz evaluation failed.",
-                ),
+                "Please answer every question before submitting.",
                 "error",
             )
 
@@ -676,140 +707,318 @@ def submit_quiz():
                 url_for("quiz_center")
             )
 
-        # ------------------------------------------
-        # Find topic in database
-        # ------------------------------------------
 
-        topics = db.get_all_topics()
-
-        topic = next(
-            (
-                item
-                for item in topics
-                if item["name"] == quiz_topic
-            ),
-            None,
-        )
-
-        # ------------------------------------------
-        # Save actual quiz score
-        # ------------------------------------------
-
-        if topic:
-
-            db.update_latest_quiz_result(
-                topic_id=topic["id"],
-                correct=evaluation["correct"],
-                total=evaluation["total"],
-                percentage=evaluation["percentage"],
-                evaluation=evaluation.get(
-                    "evaluation",
-                    "",
-                ),
-            )
-
-        # ------------------------------------------
-        # Mark scheduled quiz as completed
-        # ------------------------------------------
-
-        quiz_plan_id = session.get(
-            "quiz_plan_id"
-        )
-
-        if quiz_plan_id:
-
-            db.mark_plan_completed(
-                quiz_plan_id
-            )
-
-        # ------------------------------------------
-        # Replan according to performance
-        # ------------------------------------------
-
-        quality = evaluation["quality"]
-
-        trace = run_agent_turn(
-            f"""
-            The student completed a quiz for
-            "{quiz_topic}".
-
-            Quiz quality: {quality}/5.
-
-            Update the learning state and rebuild
-            the remaining study, revision, and
-            quiz schedule.
-            """
-        )
-
-        session["last_trace"] = trace
-
-        # ------------------------------------------
-        # Save evaluation temporarily
-        # ------------------------------------------
-
-        session["quiz_evaluation"] = (
-            evaluation
-        )
-
-        # ------------------------------------------
-        # Clear active quiz
-        # ------------------------------------------
-
-        session.pop(
-            "current_quiz",
-            None,
-        )
-
-        session.pop(
-            "quiz_topic",
-            None,
-        )
-
-        session.pop(
-            "quiz_plan_id",
-            None,
-        )
-
-        return redirect(
-            url_for("quiz_results")
-        )
-
-    except Exception as error:
-
-        flash(
-            f"Quiz submission failed: {str(error)}",
-            "error",
-        )
-
-        return redirect(
-            url_for("quiz_center")
-        )
+        student_answers[
+            str(index)
+        ] = answer_value
 
 
-@app.route("/results")
-def quiz_results():
-    """
-    Show the latest completed quiz result.
-    """
+    # ------------------------------------------
+    # Evaluate quiz
+    # ------------------------------------------
 
-    evaluation = session.get(
-        "quiz_evaluation"
+    result = evaluate_quiz(
+        topic_name=quiz_topic,
+        questions=current_quiz,
+        student_answers=student_answers,
     )
 
-    if not evaluation:
+
+    if result["status"] != "ok":
+            # ------------------------------------------
+    # Find topic in database
+    # ------------------------------------------
+
+        topic = db.get_topic_by_name(
+        quiz_topic
+    )
+
+    if not topic:
 
         flash(
-            "No recent quiz result found.",
+            "The topic could not be found in the database.",
             "error",
         )
 
         return redirect(
             url_for("quiz_center")
         )
+
+
+    # ------------------------------------------
+    # Save SM-2 quiz result
+    # ------------------------------------------
+
+    taken_at = datetime.now().isoformat()
+
+    db.insert_quiz_result(
+        topic_id=topic["id"],
+        quality=result["quality"],
+        taken_at=taken_at,
+    )
+
+
+    # ------------------------------------------
+    # Save objective quiz performance
+    # ------------------------------------------
+
+    db.update_latest_quiz_result(
+        topic_id=topic["id"],
+        correct=result["correct"],
+        total=result["total"],
+        percentage=result["percentage"],
+        evaluation=result["evaluation"],
+    )
+        # ------------------------------------------
+    # Update the topic's SM-2 learning state
+    # ------------------------------------------
+
+    current_repetitions = topic.get(
+        "repetitions",
+        0,
+    )
+
+    current_ease_factor = topic.get(
+        "ease_factor",
+        2.5,
+    )
+
+    current_interval_days = topic.get(
+        "interval_days",
+        0,
+    )
+
+
+    sm2_state = sm2_update(
+        quality=result["quality"],
+        repetitions=current_repetitions,
+        ease_factor=current_ease_factor,
+        interval_days=current_interval_days,
+    )
+
+
+    db.update_topic_sm2(
+        topic_id=topic["id"],
+        repetitions=sm2_state["repetitions"],
+        ease_factor=sm2_state["ease_factor"],
+        interval_days=sm2_state["interval_days"],
+    )
+
+    # ------------------------------------------
+    # Mark scheduled quiz as completed
+    # ------------------------------------------
+
+    if quiz_plan_id:
+
+        db.mark_plan_completed(
+            quiz_plan_id
+        )
+
+        flash(
+            result.get(
+                "message",
+                "Quiz evaluation failed.",
+            ),
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+        # ------------------------------------------
+    # Find the topic in the database
+    # ------------------------------------------
+
+    topic = db.get_topic_by_name(
+        quiz_topic
+    )
+
+
+    if not topic:
+
+        flash(
+            "The quiz was evaluated, but the topic "
+            "could not be found in the database.",
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+
+
+    # ------------------------------------------
+    # Save quiz result permanently
+    # ------------------------------------------
+
+    db.save_quiz_result(
+        topic_id=topic["id"],
+        correct=result["correct"],
+        total=result["total"],
+        percentage=result["percentage"],
+        quality=result["quality"],
+    )
+
+    # ------------------------------------------
+    # Adapt the study plan
+    # ------------------------------------------
+
+    trace = run_agent_turn(
+        f"""
+The student has completed a quiz.
+
+Topic:
+{quiz_topic}
+
+Correct answers:
+{result['correct']}/{result['total']}
+
+Percentage:
+{result['percentage']}%
+
+SM-2 quality:
+{result['quality']}/5
+
+Evaluation:
+{result['evaluation']}
+
+Review the student's updated learning state.
+
+Adapt the FUTURE study plan if necessary.
+
+Rules:
+
+1. Do not recreate activities that have already been completed.
+
+2. If performance is weak, add more revision or study
+   time for this topic.
+
+3. If performance is moderate, maintain the topic
+   in the revision schedule.
+
+4. If performance is strong, avoid unnecessary
+   repetition.
+
+5. Respect the student's saved weekly study time slots.
+
+6. Keep future quizzes at 15 minutes.
+
+Focus only on future activities.
+"""
+    )
+
+
+    # ------------------------------------------
+    # Save agent trace
+    # ------------------------------------------
+
+    session[
+        "last_trace"
+    ] = trace
+
+
+    # ------------------------------------------
+    # Save result for result page
+    # ------------------------------------------
+
+    session[
+        "last_quiz_result"
+    ] = {
+        "topic_name": result["topic_name"],
+        "correct": result["correct"],
+        "total": result["total"],
+        "percentage": result["percentage"],
+        "quality": result["quality"],
+        "evaluation": result["evaluation"],
+        "plan_updated": True,
+    }
+
+
+    # ------------------------------------------
+    # Clear active quiz from session
+    # ------------------------------------------
+
+    session.pop(
+        "current_quiz",
+        None,
+    )
+
+    session.pop(
+        "quiz_topic",
+        None,
+    )
+
+    session.pop(
+        "quiz_plan_id",
+        None,
+    )
+    return redirect(
+    url_for("quiz_result")
+)
+@app.route("/quiz/result")
+def quiz_result():
+
+    result = session.get(
+        "last_quiz_result"
+    )
+
+    if not result:
+
+        flash(
+            "No quiz result is available.",
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+
     return render_template(
-    "results.html",
-    evaluation=evaluation,
-    today=date.today().strftime("%A, %d %B %Y"),
+        "results.html",
+        topic_name=result["topic_name"],
+        correct=result["correct"],
+        total=result["total"],
+        percentage=result["percentage"],
+        quality=result["quality"],
+        evaluation=result["evaluation"],
+        plan_updated=result["plan_updated"],
+    )
+
+
+    # ------------------------------------------
+    # Go to results page
+    # ------------------------------------------
+
+    return redirect(
+        url_for("quiz_result")
+    )
+def quiz_result():
+
+    result = session.get(
+        "last_quiz_result"
+    )
+
+
+    if not result:
+
+        flash(
+            "No quiz result is available.",
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+
+
+    return render_template(
+        "results.html",
+        topic_name=result["topic_name"],
+        correct=result["correct"],
+        total=result["total"],
+        percentage=result["percentage"],
+        quality=result["quality"],
+        plan_updated=result["plan_updated"],
     )
 
 

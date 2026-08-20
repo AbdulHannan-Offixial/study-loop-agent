@@ -1,0 +1,138 @@
+@app.route("/quiz/submit", methods=["POST"])
+def submit_quiz():
+
+    current_quiz = session.get("current_quiz")
+    quiz_topic = session.get("quiz_topic")
+    quiz_plan_id = session.get("quiz_plan_id")
+
+    if not current_quiz or not quiz_topic:
+
+        flash(
+            "There is no active quiz to submit.",
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+
+
+    answers = []
+
+    for index, question in enumerate(current_quiz):
+
+        answer_value = request.form.get(
+            f"answer_{index}"
+        )
+
+
+        if answer_value is None:
+
+            flash(
+                "Please answer every question.",
+                "error",
+            )
+
+            return redirect(
+                url_for("quiz_center")
+            )
+
+
+        answers.append(
+            int(answer_value)
+        )
+
+
+    # ------------------------------------------
+    # Evaluate the student's quiz
+    # ------------------------------------------
+
+    result = evaluate_quiz(
+        topic_name=quiz_topic,
+        questions=current_quiz,
+        answers=answers,
+    )
+
+
+    if result["status"] != "ok":
+
+        flash(
+            result.get(
+                "message",
+                "Quiz evaluation failed.",
+            ),
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
+
+
+    # ------------------------------------------
+    # Adapt the future study plan
+    # ------------------------------------------
+
+    trace = run_agent_turn(
+        f"""
+        The student completed a quiz for the topic
+        "{quiz_topic}".
+
+        Quiz result:
+        {result['correct']}/{result['total']}
+
+        Percentage:
+        {result['percentage']}%
+
+        SM-2 quality:
+        {result['quality']}/5
+
+        Review the student's updated learning state and
+        adapt the future study plan if necessary.
+
+        Do not unnecessarily recreate completed activities.
+        Focus on future study, revision, and quiz activities.
+        """
+    )
+
+
+    session["last_trace"] = trace
+
+
+    # ------------------------------------------
+    # Save result for results page
+    # ------------------------------------------
+
+    session["last_quiz_result"] = {
+        "topic_name": quiz_topic,
+        "correct": result["correct"],
+        "total": result["total"],
+        "percentage": result["percentage"],
+        "quality": result["quality"],
+        "plan_updated": True,
+    }
+
+
+    # ------------------------------------------
+    # Clear active quiz
+    # ------------------------------------------
+
+    session.pop(
+        "current_quiz",
+        None,
+    )
+
+    session.pop(
+        "quiz_topic",
+        None,
+    )
+
+    session.pop(
+        "quiz_plan_id",
+        None,
+    )
+
+
+    return redirect(
+        url_for("quiz_result")
+    )

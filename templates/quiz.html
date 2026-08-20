@@ -1,0 +1,682 @@
+{% extends "base.html" %}
+
+
+{% block title %}
+StudyLoop — Quiz Center
+{% endblock %}
+
+
+{% block page_label %}
+KNOWLEDGE CHECK
+{% endblock %}
+
+
+{% block page_title %}
+Quiz Center
+{% endblock %}
+
+
+{% block content %}
+
+
+<!-- ==========================================
+     Quiz Hero
+========================================== -->
+
+<section class="quiz-hero">
+
+    <div>
+
+        <div class="hero-eyebrow">
+            ADAPTIVE ASSESSMENT
+        </div>
+
+        <h2>
+            Test your understanding.
+        </h2>
+
+        <p>
+            Complete your scheduled quizzes and StudyLoop will
+            use your performance to adapt your future study plan.
+        </p>
+
+    </div>
+
+
+    <div class="quiz-hero-info">
+
+        <div class="quiz-hero-number">
+
+            {{ upcoming_quizzes|length }}
+
+        </div>
+
+        <div class="quiz-hero-label">
+
+            Pending quizzes
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ==========================================
+     Active Quiz
+========================================== -->
+
+{% if current_quiz and quiz_topic %}
+
+
+    <section class="active-quiz-section">
+
+        <div class="active-quiz-header">
+
+            <div>
+
+                <div class="section-eyebrow">
+                    ACTIVE QUIZ
+                </div>
+
+                <h2>
+                    {{ quiz_topic }}
+                </h2>
+
+                <p>
+                    Answer each question carefully. Your result
+                    will help StudyLoop adjust your preparation plan.
+                </p>
+
+            </div>
+
+
+            <div class="quiz-duration">
+
+                <span>
+                    ⏱
+                </span>
+
+                15 minutes
+
+            </div>
+
+        </div>
+
+
+        <form
+            action="{{ url_for('submit_quiz') }}"
+            method="POST"
+            id="quiz-form"
+        >
+
+
+{% for question in current_quiz %}
+
+    {% set question_index = loop.index0 %}
+
+    <article class="question-card">
+
+        <div class="question-number">
+
+            Question {{ loop.index }}
+
+        </div>
+
+        <h3>
+
+            {{ question.question }}
+
+        </h3>
+
+        <div class="answers-list">
+
+            {% for option in question.options %}
+
+                <label class="answer-option">
+
+                    <input
+                        type="radio"
+                        name="answer_{{ question_index }}"
+                        value="{{ loop.index0 }}"
+                        required
+                    >
+
+
+                                <span class="answer-circle">
+
+                                    {{ ["A", "B", "C", "D"][loop.index0] }}
+
+                                </span>
+
+
+                                <span class="answer-text">
+
+                                    {{ option }}
+
+                                </span>
+
+
+                            </label>
+
+
+                        {% endfor %}
+
+
+                    </div>
+
+
+                </article>
+
+
+            {% endfor %}
+
+
+            <button
+                type="submit"
+                class="primary-button submit-quiz-button"
+            >
+
+                Submit Quiz
+
+                <span>
+                    →
+                </span>
+
+            </button>
+
+
+        </form>
+
+    </section>
+
+
+
+<!-- ==========================================
+     No active quiz
+========================================== -->
+
+{% else %}
+
+
+    <!-- ======================================
+         Scheduled quizzes
+    ====================================== -->
+
+    <section class="quiz-list-section">
+
+
+        <div class="section-header-row">
+
+            <div>
+
+                <div class="section-eyebrow">
+                    YOUR PLAN
+                </div>
+
+                <h2>
+                    Scheduled Quizzes
+                </h2>
+
+            </div>
+
+
+            <div class="plan-count">
+
+                {{ upcoming_quizzes|length }}
+                pending
+
+            </div>
+
+        </div>
+
+
+        {% if upcoming_quizzes %}
+
+
+            <div class="scheduled-quiz-list">
+
+
+                {% for quiz in upcoming_quizzes %}
+
+
+                    <article class="scheduled-quiz-card">
+
+
+                        <div class="scheduled-quiz-icon">
+
+                            ✦
+
+                        </div>
+
+
+                        <div class="scheduled-quiz-content">
+
+
+                            <div class="activity-badge badge-quiz">
+
+                                QUIZ
+
+                            </div>
+
+
+                            <h3>
+
+                                {{ quiz.topic_name }}
+
+                            </h3>
+
+
+                            <p>
+
+                                Scheduled:
+                                {{ quiz.formatted_time
+                                    if quiz.formatted_time
+                                    else quiz.study_date
+                                }}
+
+                                • 15 minutes
+
+                            </p>
+
+
+                        </div>
+
+
+                        <a
+                            href="{{ url_for('start_quiz', plan_id=quiz.id) }}"
+                            class="quiz-button"
+                        >
+
+                            Start Quiz
+
+                            <span>
+                                →
+                            </span>
+
+                        </a>
+
+
+                    </article>
+
+
+                {% endfor %}
+
+
+            </div>
+
+
+        {% else %}
+
+
+            <div class="empty-plan">
+
+
+                <div class="empty-icon">
+
+                    ✦
+
+                </div>
+
+
+                <h3>
+                    No quizzes waiting
+                </h3>
+
+
+                <p>
+                    When StudyLoop creates your exam plan,
+                    scheduled knowledge checks will appear here.
+                </p>
+
+
+            </div>
+
+
+        {% endif %}
+
+
+    </section>
+
+
+
+    <!-- ======================================
+         Previous Quiz Results
+    ====================================== -->
+
+    <section class="previous-results-section">
+
+
+        <div class="section-header-row">
+
+            <div>
+
+                <div class="section-eyebrow">
+                    PERFORMANCE HISTORY
+                </div>
+
+                <h2>
+                    Previous Quiz Results
+                </h2>
+
+            </div>
+
+        </div>
+
+
+        {% if topics %}
+
+
+            <div class="topic-results-list">
+
+
+                {% for topic in topics %}
+
+
+                    <article class="topic-result-card">
+
+
+                        <div class="topic-result-main">
+
+
+                            <div class="topic-result-icon">
+
+                                ◉
+
+                            </div>
+
+
+                            <div>
+
+                                <h3>
+
+                                    {{ topic.name }}
+
+                                </h3>
+
+
+                                <p>
+
+                                    Review your quiz attempts
+                                    and learning performance.
+
+                                </p>
+
+                            </div>
+
+
+                        </div>
+
+
+                        <button
+                            type="button"
+                            class="result-toggle"
+                            data-target="results-{{ topic.id }}"
+                        >
+
+                            Show Quiz Results
+
+                            <span>
+                                ↓
+                            </span>
+
+                        </button>
+
+
+                    </article>
+
+
+                    <div
+                        class="topic-history"
+                        id="results-{{ topic.id }}"
+                    >
+
+
+                        {% if topic.history %}
+
+
+                            {% for result in topic.history %}
+
+
+                                <div class="history-result-card">
+
+
+                                    <div class="history-score">
+
+
+                                        {% if result.percentage is not none %}
+
+                                            {{ result.correct }}/{{ result.total }}
+
+                                            <strong>
+
+                                                {{ result.percentage }}%
+
+                                            </strong>
+
+
+                                        {% else %}
+
+                                            <strong>
+
+                                                SM-2
+                                                {{ result.quality }}/5
+
+                                            </strong>
+
+                                        {% endif %}
+
+
+                                    </div>
+
+
+                                    <div class="history-details">
+
+
+                                        <span>
+
+                                            {{ result.taken_at }}
+
+                                        </span>
+
+
+                                        <span>
+
+                                            Quality:
+                                            {{ result.quality }}/5
+
+                                        </span>
+
+
+                                    </div>
+
+
+                                </div>
+
+
+                            {% endfor %}
+
+
+                        {% else %}
+
+
+                            <div class="no-history">
+
+                                No quiz attempts have been completed
+                                for this topic yet.
+
+                            </div>
+
+
+                        {% endif %}
+
+
+                    </div>
+
+
+                {% endfor %}
+
+
+            </div>
+
+
+        {% else %}
+
+
+            <div class="empty-plan">
+
+
+                <div class="empty-icon">
+
+                    📊
+
+                </div>
+
+
+                <h3>
+                    No topics yet
+                </h3>
+
+
+                <p>
+                    Upload and parse a syllabus to begin
+                    tracking your quiz performance.
+                </p>
+
+
+            </div>
+
+
+        {% endif %}
+
+
+    </section>
+
+
+{% endif %}
+
+
+{% endblock %}
+
+
+
+{% block scripts %}
+
+
+<script>
+
+
+    // ==========================================
+    // Toggle quiz history
+    // ==========================================
+
+    const resultButtons =
+        document.querySelectorAll(
+            ".result-toggle"
+        );
+
+
+    resultButtons.forEach(
+        function (button) {
+
+            button.addEventListener(
+                "click",
+                function () {
+
+                    const targetId =
+                        button.dataset.target;
+
+                    const target =
+                        document.getElementById(
+                            targetId
+                        );
+
+
+                    if (!target) {
+                        return;
+                    }
+
+
+                    const isOpen =
+                        target.classList.contains(
+                            "history-open"
+                        );
+
+
+                    // Close all histories first
+
+                    document
+                        .querySelectorAll(
+                            ".topic-history"
+                        )
+                        .forEach(
+                            function (history) {
+
+                                history.classList.remove(
+                                    "history-open"
+                                );
+
+                            }
+                        );
+
+
+                    // Open clicked history
+
+                    if (!isOpen) {
+
+                        target.classList.add(
+                            "history-open"
+                        );
+
+                    }
+
+
+                    // Update all button labels
+
+                    resultButtons.forEach(
+                        function (otherButton) {
+
+                            const otherTarget =
+                                document.getElementById(
+                                    otherButton.dataset.target
+                                );
+
+
+                            if (
+                                otherTarget &&
+                                otherTarget.classList.contains(
+                                    "history-open"
+                                )
+                            ) {
+
+                                otherButton.innerHTML =
+                                    `
+                                    Hide Quiz Results
+                                    <span>↑</span>
+                                    `;
+
+                            } else {
+
+                                otherButton.innerHTML =
+                                    `
+                                    Show Quiz Results
+                                    <span>↓</span>
+                                    `;
+
+                            }
+
+                        }
+                    );
+
+                }
+            );
+
+        }
+    );
+
+
+</script>
+
+
+{% endblock %}

@@ -162,25 +162,35 @@ def evaluate_quiz(
     correct = 0
     results = []
 
-    for index, question in enumerate(questions, start=1):
-        student_answer = student_answers.get(str(index))
-        correct_answer = question["correct_answer"]
+    for index, question in enumerate(
+    questions,
+    start=1,
+    ):
+
+        student_answer = student_answers.get(
+        str(index)
+        )
+
+        correct_answer = question[
+        "correct_answer"
+        ]
 
         is_correct = (
-            student_answer == correct_answer
-        )
+        str(student_answer)
+        == str(correct_answer)
+        )   
 
         if is_correct:
             correct += 1
 
         results.append(
-            {
-                "question": index,
-                "student_answer": student_answer,
-                "correct_answer": correct_answer,
-                "correct": is_correct,
-            }
-        )
+        {
+            "question": index,
+            "student_answer": student_answer,
+            "correct_answer": correct_answer,
+            "correct": is_correct,
+        }
+    )
 
     total = len(questions)
     percentage = round((correct / total) * 100, 2)

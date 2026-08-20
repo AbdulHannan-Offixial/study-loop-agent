@@ -41,14 +41,6 @@ def init_db():
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
             );
 
-            CREATE TABLE IF NOT EXISTS quiz_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                topic_id INTEGER NOT NULL,
-                quality INTEGER NOT NULL,
-                taken_at TEXT NOT NULL,
-                FOREIGN KEY (topic_id) REFERENCES topics(id)
-            );
-
             CREATE TABLE IF NOT EXISTS exam (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 exam_date TEXT NOT NULL,
@@ -65,6 +57,19 @@ def init_db():
                 evaluation TEXT,
                 taken_at TEXT NOT NULL,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
+
+             CREATE TABLE IF NOT EXISTS quiz_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id INTEGER NOT NULL,
+                correct INTEGER,
+                total INTEGER,
+                percentage REAL,
+                quality INTEGER NOT NULL,
+                taken_at TEXT NOT NULL,
+
+        FOREIGN KEY (topic_id)
+            REFERENCES topics(id)
+    )
             );
         """ )
 
@@ -173,6 +178,20 @@ def get_all_topics() -> list[dict]:
         rows = conn.execute("SELECT * FROM topics").fetchall()
         return [dict(r) for r in rows]
 
+def get_topic_by_name(topic_name: str) -> dict | None:
+
+    with get_conn() as conn:
+
+        row = conn.execute(
+            """
+            SELECT *
+            FROM topics
+            WHERE name = ?
+            """,
+            (topic_name,),
+        ).fetchone()
+
+        return dict(row) if row else None
 
 def set_exam(exam_date: str, daily_hours: float):
     with get_conn() as conn:
@@ -531,3 +550,4 @@ def get_plan_activity(plan_id: int) -> dict | None:
         ).fetchone()
 
         return dict(row) if row else None
+
