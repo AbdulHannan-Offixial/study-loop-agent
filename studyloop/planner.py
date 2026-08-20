@@ -6,6 +6,34 @@ from studyloop import db
 QUIZ_MINUTES = 15
 MAX_STUDY_BLOCK_MINUTES = 60
 MIN_STUDY_BLOCK_MINUTES = 30
+REVISION_MINUTES = 45
+
+
+def _time_from_string(value: str) -> time:
+    return datetime.strptime(
+        value,
+        "%H:%M",
+    ).time()
+
+
+def _minutes_between(
+    start: time,
+    end: time,
+) -> int:
+
+    start_dt = datetime.combine(
+        date.today(),
+        start,
+    )
+
+    end_dt = datetime.combine(
+        date.today(),
+        end,
+    )
+
+    return int(
+        (end_dt - start_dt).total_seconds() / 60
+    )
 
 
 def _add_activity(
@@ -29,25 +57,29 @@ def _add_activity(
     )
 
 
-def _next_available_time(
-    current_time: time,
+def _next_time(
+    current: time,
     minutes: int,
 ) -> time:
-    base = datetime.combine(date.today(), current_time)
-    result = base + timedelta(minutes=minutes)
-    return result.time()
+
+    base = datetime.combine(
+        date.today(),
+        current,
+    )
+
+    return (
+        base + timedelta(minutes=minutes)
+    ).time()
 
 
 def build_plan(reasoning: str) -> dict:
     """
-    Build a concrete study/revision/quiz schedule.
+    Build the study plan using the student's actual
+    weekly availability.
 
-    The planner uses deterministic rules:
-    - New topics receive first-pass study time.
-    - Each first-pass study block receives a 15-minute quiz.
-    - Topics with an SM-2 review date receive revision time.
-    - A quiz is placed after a revision session.
-    - Mastered topics are not given normal study time.
+    The agent decides WHAT should be studied.
+    This planner decides WHEN it fits into the
+    student's available time.
     """
 
     exam = db.get_exam()
@@ -55,7 +87,7 @@ def build_plan(reasoning: str) -> dict:
     if not exam:
         return {
             "status": "error",
-            "message": "No exam date set yet.",
+            "message": "No exam date has been configured.",
         }
 
     topics = db.get_all_topics()
@@ -63,34 +95,44 @@ def build_plan(reasoning: str) -> dict:
     if not topics:
         return {
             "status": "error",
-            "message": "No topics yet — parse a syllabus first.",
+            "message": "No topics found. Parse a syllabus first.",
         }
 
-    exam_date = date.fromisoformat(exam["exam_date"])
-    daily_hours = float(exam["daily_hours"])
+    slots_by_day = db.get_study_slots_by_weekday()
 
-    if exam_date <= date.today():
+    if not any(slots_by_day.values()):
         return {
             "status": "error",
-            "message": "Exam date must be in the future.",
+            "message": (
+                "No study time slots have been configured. "
+                "Set your weekly study availability first."
+            ),
         }
 
-    daily_minutes = int(daily_hours * 60)
-
-    # Reserve 15 minutes for a quiz whenever we create a
-    # study/revision session.
-    usable_minutes = max(
-        30,
-        daily_minutes - QUIZ_MINUTES,
+    exam_date = date.fromisoformat(
+        exam["exam_date"]
     )
-
-    db.clear_future_plan()
 
     today = date.today()
 
-    # ------------------------------------------------------------
-    # 1. Determine topics needing first-pass study.
-    # ------------------------------------------------------------
+    if exam_date <= today:
+        return {
+            "status": "error",
+            "message": (
+                "Exam date must be after today."
+            ),
+        }
+
+    # ---------------------------------------------------------
+    # Remove only pending activities.
+    # Completed activities remain as history.
+    # ---------------------------------------------------------
+
+    db.clear_future_plan()
+
+    # ---------------------------------------------------------
+    # New topics
+    # ---------------------------------------------------------
 
     new_topics = [
         topic
@@ -99,7 +141,6 @@ def build_plan(reasoning: str) -> dict:
         and not topic["mastered"]
     ]
 
-    # Harder topics first.
     new_topics.sort(
         key=lambda topic: (
             -topic["difficulty"],
@@ -107,197 +148,270 @@ def build_plan(reasoning: str) -> dict:
         )
     )
 
-    # Remaining first-pass hours.
-    remaining = {
+    remaining_hours = {
         topic["id"]: float(topic["est_hours"])
         for topic in new_topics
     }
 
-    # ------------------------------------------------------------
-    # 2. Determine revision topics from SM-2.
-    # ------------------------------------------------------------
+    # ---------------------------------------------------------
+    # SM-2 revision queue
+    # ---------------------------------------------------------
 
-    revision_topics = {}
+    revision_queue = []
 
     for topic in topics:
-        next_review = topic.get("next_review_date")
+
+        next_review = topic.get(
+            "next_review_date"
+        )
 
         if (
             next_review
             and not topic["mastered"]
         ):
             try:
-                review_date = date.fromisoformat(next_review)
+                review_date = date.fromisoformat(
+                    next_review
+                )
             except ValueError:
                 continue
 
-            if today <= review_date < exam_date:
-                revision_topics.setdefault(
-                    review_date,
-                    [],
-                ).append(topic)
+            if review_date < exam_date:
+                revision_queue.append(
+                    {
+                        "topic": topic,
+                        "eligible_date": review_date,
+                    }
+                )
 
-    # ------------------------------------------------------------
-    # 3. Build day-by-day schedule.
-    # ------------------------------------------------------------
+    revision_queue.sort(
+        key=lambda item: item["eligible_date"]
+    )
+
+    new_topic_index = 0
+
+    total_study = 0
+    total_revision = 0
+    total_quizzes = 0
 
     current_day = today
 
-    total_study_activities = 0
-    total_revision_activities = 0
-    total_quizzes = 0
-
     while current_day < exam_date:
 
-        minutes_left = daily_minutes
+        weekday = current_day.weekday()
 
-        # Start each day at 6:00 PM.
-        # You can later make this a user setting.
-        current_time = time(18, 0)
-
-        # --------------------------------------------------------
-        # Revision due today
-        # --------------------------------------------------------
-
-        due_revisions = revision_topics.get(
-            current_day,
+        raw_slots = slots_by_day.get(
+            weekday,
             [],
         )
 
-        for topic in due_revisions:
+        # Convert DB slots into mutable cursors.
+        slots = []
 
-            if minutes_left < 45:
-                break
+        for slot in raw_slots:
 
-            revision_minutes = min(
-                45,
-                minutes_left - QUIZ_MINUTES,
+            start = _time_from_string(
+                slot["start_time"]
             )
 
-            if revision_minutes < 30:
-                break
-
-            _add_activity(
-                topic_id=topic["id"],
-                activity_type="revision",
-                activity_date=current_day,
-                start_time=current_time,
-                duration_minutes=revision_minutes,
+            end = _time_from_string(
+                slot["end_time"]
             )
 
-            total_revision_activities += 1
-
-            current_time = _next_available_time(
-                current_time,
-                revision_minutes,
-            )
-
-            minutes_left -= revision_minutes
-
-            # Quiz immediately after revision.
-            if minutes_left >= QUIZ_MINUTES:
-                _add_activity(
-                    topic_id=topic["id"],
-                    activity_type="quiz",
-                    activity_date=current_day,
-                    start_time=current_time,
-                    duration_minutes=QUIZ_MINUTES,
-                )
-
-                total_quizzes += 1
-
-                current_time = _next_available_time(
-                    current_time,
-                    QUIZ_MINUTES,
-                )
-
-                minutes_left -= QUIZ_MINUTES
-
-        # --------------------------------------------------------
-        # First-pass learning
-        # --------------------------------------------------------
-
-        for topic in new_topics:
-
-            if minutes_left < (
-                MIN_STUDY_BLOCK_MINUTES
-                + QUIZ_MINUTES
-            ):
-                break
-
-            remaining_hours = remaining[topic["id"]]
-
-            if remaining_hours <= 0:
+            if start >= end:
                 continue
 
-            available_study_minutes = min(
-                MAX_STUDY_BLOCK_MINUTES,
-                int(remaining_hours * 60),
-                minutes_left - QUIZ_MINUTES,
+            slots.append(
+                {
+                    "start": start,
+                    "end": end,
+                    "cursor": start,
+                }
             )
 
-            if available_study_minutes < MIN_STUDY_BLOCK_MINUTES:
-                continue
+        # -----------------------------------------------------
+        # Process every availability window for this day.
+        # -----------------------------------------------------
 
-            _add_activity(
-                topic_id=topic["id"],
-                activity_type="study",
-                activity_date=current_day,
-                start_time=current_time,
-                duration_minutes=available_study_minutes,
-            )
+        for slot in slots:
 
-            total_study_activities += 1
+            cursor = slot["cursor"]
 
-            remaining[topic["id"]] -= (
-                available_study_minutes / 60
-            )
+            while cursor < slot["end"]:
 
-            current_time = _next_available_time(
-                current_time,
-                available_study_minutes,
-            )
-
-            minutes_left -= available_study_minutes
-
-            # Quiz after study.
-            if minutes_left >= QUIZ_MINUTES:
-                _add_activity(
-                    topic_id=topic["id"],
-                    activity_type="quiz",
-                    activity_date=current_day,
-                    start_time=current_time,
-                    duration_minutes=QUIZ_MINUTES,
+                available = _minutes_between(
+                    cursor,
+                    slot["end"],
                 )
 
-                total_quizzes += 1
+                # Need at least:
+                # 30 min study + 15 min quiz
+                if available < (
+                    MIN_STUDY_BLOCK_MINUTES
+                    + QUIZ_MINUTES
+                ):
+                    break
 
-                current_time = _next_available_time(
-                    current_time,
-                    QUIZ_MINUTES,
-                )
+                # -------------------------------------------------
+                # 1. Revision gets priority when due.
+                # -------------------------------------------------
 
-                minutes_left -= QUIZ_MINUTES
+                due_revision = None
+
+                for item in revision_queue:
+
+                    if (
+                        item["eligible_date"]
+                        <= current_day
+                    ):
+                        due_revision = item
+                        break
+
+                if due_revision:
+
+                    topic = due_revision["topic"]
+
+                    revision_minutes = min(
+                        REVISION_MINUTES,
+                        available - QUIZ_MINUTES,
+                    )
+
+                    if revision_minutes >= 30:
+
+                        _add_activity(
+                            topic_id=topic["id"],
+                            activity_type="revision",
+                            activity_date=current_day,
+                            start_time=cursor,
+                            duration_minutes=revision_minutes,
+                        )
+
+                        total_revision += 1
+
+                        cursor = _next_time(
+                            cursor,
+                            revision_minutes,
+                        )
+
+                        available = _minutes_between(
+                            cursor,
+                            slot["end"],
+                        )
+
+                        if available >= QUIZ_MINUTES:
+
+                            _add_activity(
+                                topic_id=topic["id"],
+                                activity_type="quiz",
+                                activity_date=current_day,
+                                start_time=cursor,
+                                duration_minutes=QUIZ_MINUTES,
+                            )
+
+                            total_quizzes += 1
+
+                            cursor = _next_time(
+                                cursor,
+                                QUIZ_MINUTES,
+                            )
+
+                        revision_queue.remove(
+                            due_revision
+                        )
+
+                        continue
+
+                # -------------------------------------------------
+                # 2. First-pass study.
+                # -------------------------------------------------
+
+                while (
+                    new_topic_index
+                    < len(new_topics)
+                ):
+
+                    topic = new_topics[
+                        new_topic_index
+                    ]
+
+                    remaining = int(
+                        remaining_hours[
+                            topic["id"]
+                        ] * 60
+                    )
+
+                    if remaining <= 0:
+                        new_topic_index += 1
+                        continue
+
+                    study_minutes = min(
+                        MAX_STUDY_BLOCK_MINUTES,
+                        remaining,
+                        available - QUIZ_MINUTES,
+                    )
+
+                    if study_minutes < 30:
+                        break
+
+                    _add_activity(
+                        topic_id=topic["id"],
+                        activity_type="study",
+                        activity_date=current_day,
+                        start_time=cursor,
+                        duration_minutes=study_minutes,
+                    )
+
+                    total_study += 1
+
+                    remaining_hours[
+                        topic["id"]
+                    ] -= study_minutes / 60
+
+                    cursor = _next_time(
+                        cursor,
+                        study_minutes,
+                    )
+
+                    available = _minutes_between(
+                        cursor,
+                        slot["end"],
+                    )
+
+                    # Quiz immediately after study.
+                    if available >= QUIZ_MINUTES:
+
+                        _add_activity(
+                            topic_id=topic["id"],
+                            activity_type="quiz",
+                            activity_date=current_day,
+                            start_time=cursor,
+                            duration_minutes=QUIZ_MINUTES,
+                        )
+
+                        total_quizzes += 1
+
+                        cursor = _next_time(
+                            cursor,
+                            QUIZ_MINUTES,
+                        )
+
+                    if (
+                        remaining_hours[
+                            topic["id"]
+                        ] <= 0
+                    ):
+                        new_topic_index += 1
+
+                    break
+
+                slot["cursor"] = cursor
 
         current_day += timedelta(days=1)
-
-        # Stop once all first-pass topics are completed.
-        if not any(
-            hours > 0
-            for hours in remaining.values()
-        ):
-            # We still continue through the calendar because
-            # future SM-2 revisions may exist.
-            if not any(
-                day >= current_day
-                for day in revision_topics
-            ):
-                break
 
     return {
         "status": "ok",
         "reasoning": reasoning,
-        "study_activities": total_study_activities,
-        "revision_activities": total_revision_activities,
+        "study_activities": total_study,
+        "revision_activities": total_revision,
         "quizzes": total_quizzes,
     }

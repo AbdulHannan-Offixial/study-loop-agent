@@ -21,6 +21,13 @@ def init_db():
                 next_review_date TEXT,
                 mastered INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS study_slots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                weekday INTEGER NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                UNIQUE(weekday, start_time, end_time)
+            );
 
             CREATE TABLE IF NOT EXISTS plan (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +54,19 @@ def init_db():
                 exam_date TEXT NOT NULL,
                 daily_hours REAL NOT NULL
             );
-        """)
+
+            CREATE TABLE IF NOT EXISTS quiz_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id INTEGER NOT NULL,
+                quality INTEGER NOT NULL,
+                correct INTEGER,
+                total INTEGER,
+                percentage REAL,
+                evaluation TEXT,
+                taken_at TEXT NOT NULL,
+                FOREIGN KEY (topic_id) REFERENCES topics(id)
+            );
+        """ )
 
         # ------------------------------------------------------------
         # Database migration for existing installations.
@@ -83,6 +102,45 @@ def init_db():
                 ADD COLUMN notification_sent INTEGER DEFAULT 0
                 """
             )
+
+        quiz_columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(quiz_results)"
+            ).fetchall()
+        }
+
+        if "correct" not in quiz_columns:
+            conn.execute(
+        """
+        ALTER TABLE quiz_results
+        ADD COLUMN correct INTEGER
+        """
+        )
+
+        if "total" not in quiz_columns:
+            conn.execute(
+        """
+        ALTER TABLE quiz_results
+        ADD COLUMN total INTEGER
+        """
+        )
+
+        if "percentage" not in quiz_columns:
+            conn.execute(
+        """
+        ALTER TABLE quiz_results
+        ADD COLUMN percentage REAL
+        """
+        )
+
+        if "evaluation" not in quiz_columns:
+            conn.execute(
+        """
+        ALTER TABLE quiz_results
+        ADD COLUMN evaluation TEXT
+        """
+        )
 
 
 @contextmanager
@@ -249,22 +307,76 @@ def update_topic_sm2(
         )
 
 
-def get_quiz_history(topic_id: int | None = None) -> list[dict]:
+def get_quiz_history(
+    topic_id: int | None = None,
+) -> list[dict]:
+
     with get_conn() as conn:
+
         if topic_id:
+
             rows = conn.execute(
-                "SELECT * FROM quiz_results "
-                "WHERE topic_id=? "
-                "ORDER BY taken_at",
+                """
+                SELECT
+                    quiz_results.*,
+                    topics.name AS topic_name
+                FROM quiz_results
+                JOIN topics
+                    ON quiz_results.topic_id = topics.id
+                WHERE quiz_results.topic_id = ?
+                ORDER BY quiz_results.taken_at DESC
+                """,
                 (topic_id,),
             ).fetchall()
+
         else:
+
             rows = conn.execute(
-                "SELECT * FROM quiz_results "
-                "ORDER BY taken_at"
+                """
+                SELECT
+                    quiz_results.*,
+                    topics.name AS topic_name
+                FROM quiz_results
+                JOIN topics
+                    ON quiz_results.topic_id = topics.id
+                ORDER BY quiz_results.taken_at DESC
+                """
             ).fetchall()
 
-        return [dict(r) for r in rows]
+        return [dict(row) for row in rows]
+
+def update_latest_quiz_result(
+    topic_id: int,
+    correct: int,
+    total: int,
+    percentage: float,
+    evaluation: str,
+):
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE quiz_results
+            SET
+                correct = ?,
+                total = ?,
+                percentage = ?,
+                evaluation = ?
+            WHERE id = (
+                SELECT id
+                FROM quiz_results
+                WHERE topic_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+            )
+            """,
+            (
+                correct,
+                total,
+                percentage,
+                evaluation,
+                topic_id,
+            ),
+        )
 
 def get_due_activities(now_iso: str) -> list[dict]:
     with get_conn() as conn:
@@ -316,3 +428,106 @@ def clear_topics():
         conn.execute("DELETE FROM quiz_results")
         conn.execute("DELETE FROM plan")
         conn.execute("DELETE FROM topics")
+
+def save_study_slots(slots: list[dict]):
+    """
+    Replace the student's weekly availability with the
+    newly submitted schedule.
+
+    Each slot:
+        {
+            "weekday": 0,
+            "start_time": "18:00",
+            "end_time": "20:00"
+        }
+
+    weekday:
+        0 = Monday
+        1 = Tuesday
+        ...
+        6 = Sunday
+    """
+
+    with get_conn() as conn:
+        conn.execute("DELETE FROM study_slots")
+
+        for slot in slots:
+            conn.execute(
+                """
+                INSERT INTO study_slots (
+                    weekday,
+                    start_time,
+                    end_time
+                )
+                VALUES (?, ?, ?)
+                """,
+                (
+                    slot["weekday"],
+                    slot["start_time"],
+                    slot["end_time"],
+                ),
+            )
+
+
+def get_study_slots() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM study_slots
+            ORDER BY weekday, start_time
+            """
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+
+def get_study_slots_by_weekday() -> dict[int, list[dict]]:
+    slots = get_study_slots()
+
+    result = {
+        weekday: []
+        for weekday in range(7)
+    }
+
+    for slot in slots:
+        result[slot["weekday"]].append(slot)
+
+    return result
+
+def get_upcoming_quizzes() -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                plan.*,
+                topics.name AS topic_name
+            FROM plan
+            JOIN topics
+                ON plan.topic_id = topics.id
+            WHERE
+                plan.activity_type = 'quiz'
+                AND plan.completed = 0
+            ORDER BY
+                plan.scheduled_at
+            """
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+
+def get_plan_activity(plan_id: int) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                plan.*,
+                topics.name AS topic_name
+            FROM plan
+            JOIN topics
+                ON plan.topic_id = topics.id
+            WHERE plan.id = ?
+            """,
+            (plan_id,),
+        ).fetchone()
+
+        return dict(row) if row else None

@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from pypdf import PdfReader
 
@@ -258,9 +258,9 @@ def log_result(topic_name: str, quality: int) -> dict:
         }
 
     db.insert_quiz_result(
-        topic["id"],
-        quality,
-        date.today().isoformat(),
+    topic["id"],
+    quality,
+    datetime.now().isoformat(),
     )
 
     new_state = sm2_update(
