@@ -1,138 +1,154 @@
-@app.route("/quiz/submit", methods=["POST"])
-def submit_quiz():
+{% extends "base.html" %}
 
-    current_quiz = session.get("current_quiz")
-    quiz_topic = session.get("quiz_topic")
-    quiz_plan_id = session.get("quiz_plan_id")
+{% block title %}
+Quiz Result — StudyLoop
+{% endblock %}
 
-    if not current_quiz or not quiz_topic:
+{% block content %}
 
-        flash(
-            "There is no active quiz to submit.",
-            "error",
-        )
+<section class="page-header">
 
-        return redirect(
-            url_for("quiz_center")
-        )
+    <div>
 
+        <div class="section-eyebrow">
+            QUIZ COMPLETED
+        </div>
 
-    answers = []
+        <h1>
+            {{ topic_name }}
+        </h1>
 
-    for index, question in enumerate(current_quiz):
+        <p>
+            Here is your performance summary. Your future
+            study plan has been adjusted using this result.
+        </p>
 
-        answer_value = request.form.get(
-            f"answer_{index}"
-        )
+    </div>
 
-
-        if answer_value is None:
-
-            flash(
-                "Please answer every question.",
-                "error",
-            )
-
-            return redirect(
-                url_for("quiz_center")
-            )
+</section>
 
 
-        answers.append(
-            int(answer_value)
-        )
+<section class="result-summary-grid">
+
+    <article class="result-summary-card">
+
+        <span class="result-label">
+            SCORE
+        </span>
+
+        <strong class="result-value">
+            {{ correct }}/{{ total }}
+        </strong>
+
+        <span class="result-detail">
+            Correct answers
+        </span>
+
+    </article>
 
 
-    # ------------------------------------------
-    # Evaluate the student's quiz
-    # ------------------------------------------
+    <article class="result-summary-card">
 
-    result = evaluate_quiz(
-        topic_name=quiz_topic,
-        questions=current_quiz,
-        answers=answers,
-    )
+        <span class="result-label">
+            PERCENTAGE
+        </span>
 
+        <strong class="result-value">
+            {{ percentage }}%
+        </strong>
 
-    if result["status"] != "ok":
+        <span class="result-detail">
+            Overall performance
+        </span>
 
-        flash(
-            result.get(
-                "message",
-                "Quiz evaluation failed.",
-            ),
-            "error",
-        )
-
-        return redirect(
-            url_for("quiz_center")
-        )
+    </article>
 
 
-    # ------------------------------------------
-    # Adapt the future study plan
-    # ------------------------------------------
+    <article class="result-summary-card">
 
-    trace = run_agent_turn(
-        f"""
-        The student completed a quiz for the topic
-        "{quiz_topic}".
+        <span class="result-label">
+            MEMORY QUALITY
+        </span>
 
-        Quiz result:
-        {result['correct']}/{result['total']}
+        <strong class="result-value">
+            {{ quality }}/5
+        </strong>
 
-        Percentage:
-        {result['percentage']}%
+        <span class="result-detail">
+            SM-2 learning quality
+        </span>
 
-        SM-2 quality:
-        {result['quality']}/5
+    </article>
 
-        Review the student's updated learning state and
-        adapt the future study plan if necessary.
-
-        Do not unnecessarily recreate completed activities.
-        Focus on future study, revision, and quiz activities.
-        """
-    )
+</section>
 
 
-    session["last_trace"] = trace
+<section class="result-evaluation-card">
+
+    <div class="section-eyebrow">
+        STUDYLOOP ANALYSIS
+    </div>
+
+    <h2>
+        Performance Evaluation
+    </h2>
+
+    <p>
+        {{ evaluation }}
+    </p>
+
+</section>
 
 
-    # ------------------------------------------
-    # Save result for results page
-    # ------------------------------------------
+{% if plan_updated %}
 
-    session["last_quiz_result"] = {
-        "topic_name": quiz_topic,
-        "correct": result["correct"],
-        "total": result["total"],
-        "percentage": result["percentage"],
-        "quality": result["quality"],
-        "plan_updated": True,
-    }
+<section class="plan-updated-card">
 
+    <div class="plan-updated-icon">
+        ✓
+    </div>
 
-    # ------------------------------------------
-    # Clear active quiz
-    # ------------------------------------------
+    <div>
 
-    session.pop(
-        "current_quiz",
-        None,
-    )
+        <h3>
+            Your Study Plan Was Updated
+        </h3>
 
-    session.pop(
-        "quiz_topic",
-        None,
-    )
+        <p>
+            StudyLoop has used your quiz performance and
+            memory state to adjust your future study,
+            revision, and quiz activities.
+        </p>
 
-    session.pop(
-        "quiz_plan_id",
-        None,
-    )
+    </div>
+
+</section>
+
+{% endif %}
 
 
-    return redirect(
-        url_for("quiz_result")
-    )
+<section class="result-actions">
+
+    <a
+        href="{{ url_for('dashboard') }}"
+        class="primary-button"
+    >
+        View Updated Study Plan
+
+        <span>
+            →
+        </span>
+
+    </a>
+
+
+    <a
+        href="{{ url_for('quiz_center') }}"
+        class="secondary-button"
+    >
+        Back to Quiz Center
+    </a>
+
+</section>
+
+{% endblock %}
