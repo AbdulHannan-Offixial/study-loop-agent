@@ -57,8 +57,9 @@ def init_db():
                 evaluation TEXT,
                 taken_at TEXT NOT NULL,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
+            );
 
-             CREATE TABLE IF NOT EXISTS quiz_attempts (
+            CREATE TABLE IF NOT EXISTS quiz_attempts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 topic_id INTEGER NOT NULL,
                 correct INTEGER,
@@ -66,10 +67,8 @@ def init_db():
                 percentage REAL,
                 quality INTEGER NOT NULL,
                 taken_at TEXT NOT NULL,
-
-        FOREIGN KEY (topic_id)
-            REFERENCES topics(id)
-    )
+                FOREIGN KEY (topic_id)
+                REFERENCES topics(id)
             );
         """ )
 

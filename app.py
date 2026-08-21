@@ -16,7 +16,7 @@ from pypdf import PdfReader
 from studyloop import db
 from studyloop.agent import run_agent_turn
 from studyloop.db import init_db
-from studyloop.tools import evaluate_quiz, parse_syllabus, sm2_update
+from studyloop.tools import evaluate_quiz, log_result, parse_syllabus, sm2_update
 
 
 # --------------------------------------------------
@@ -724,7 +724,30 @@ def submit_quiz():
     )
 
 
+
     if result["status"] != "ok":
+
+        sm2_result = log_result(
+        topic_name=quiz_topic,
+        quality=result["quality"],
+        correct=result["correct"],
+        total=result["total"],
+        percentage=result["percentage"],
+        evaluation=result["evaluation"],)
+
+        if sm2_result["status"] != "ok":
+
+            flash(
+            sm2_result.get(
+            "message",
+            "Failed to update the learning state.",
+                ),
+                "error",
+            )
+
+            return redirect(
+                url_for("quiz_center")
+            )
             # ------------------------------------------
     # Find topic in database
     # ------------------------------------------
@@ -769,40 +792,28 @@ def submit_quiz():
         percentage=result["percentage"],
         evaluation=result["evaluation"],
     )
-        # ------------------------------------------
+    # ------------------------------------------
     # Update the topic's SM-2 learning state
     # ------------------------------------------
 
-    current_repetitions = topic.get(
-        "repetitions",
-        0,
-    )
-
-    current_ease_factor = topic.get(
-        "ease_factor",
-        2.5,
-    )
-
-    current_interval_days = topic.get(
-        "interval_days",
-        0,
-    )
-
-
-    sm2_state = sm2_update(
+    sm2_result = log_result(
+        topic_name=quiz_topic,
         quality=result["quality"],
-        repetitions=current_repetitions,
-        ease_factor=current_ease_factor,
-        interval_days=current_interval_days,
     )
 
+    if sm2_result["status"] != "ok":
 
-    db.update_topic_sm2(
-        topic_id=topic["id"],
-        repetitions=sm2_state["repetitions"],
-        ease_factor=sm2_state["ease_factor"],
-        interval_days=sm2_state["interval_days"],
-    )
+        flash(
+            sm2_result.get(
+                "message",
+                "Failed to update the learning state.",
+            ),
+            "error",
+        )
+
+        return redirect(
+            url_for("quiz_center")
+        )
 
     # ------------------------------------------
     # Mark scheduled quiz as completed
