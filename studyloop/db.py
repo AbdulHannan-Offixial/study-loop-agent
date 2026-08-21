@@ -4,10 +4,8 @@ from contextlib import contextmanager
 
 DB_PATH = Path(__file__).parent.parent / "data" / "studyloop.db"
 
-
 def init_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
     with get_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS topics (
@@ -28,7 +26,6 @@ def init_db():
                 end_time TEXT NOT NULL,
                 UNIQUE(weekday, start_time, end_time)
             );
-
             CREATE TABLE IF NOT EXISTS plan (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 topic_id INTEGER NOT NULL,
@@ -40,13 +37,11 @@ def init_db():
                 notification_sent INTEGER DEFAULT 0,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
             );
-
             CREATE TABLE IF NOT EXISTS exam (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 exam_date TEXT NOT NULL,
                 daily_hours REAL NOT NULL
             );
-
             CREATE TABLE IF NOT EXISTS quiz_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 topic_id INTEGER NOT NULL,
@@ -58,110 +53,17 @@ def init_db():
                 taken_at TEXT NOT NULL,
                 FOREIGN KEY (topic_id) REFERENCES topics(id)
             );
-
-            CREATE TABLE IF NOT EXISTS quiz_attempts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                topic_id INTEGER NOT NULL,
-                correct INTEGER,
-                total INTEGER,
-                percentage REAL,
-                quality INTEGER NOT NULL,
-                taken_at TEXT NOT NULL,
-                FOREIGN KEY (topic_id)
-                REFERENCES topics(id)
-            );
-        """ )
-
-        # ------------------------------------------------------------
-        # Database migration for existing installations.
-        # ------------------------------------------------------------
-
-        columns = {
-            row["name"]
-            for row in conn.execute(
-                "PRAGMA table_info(plan)"
-            ).fetchall()
-        }
-
-        if "activity_type" not in columns:
-            conn.execute(
-                """
-                ALTER TABLE plan
-                ADD COLUMN activity_type TEXT DEFAULT 'study'
-                """
-            )
-
-        if "scheduled_at" not in columns:
-            conn.execute(
-                """
-                ALTER TABLE plan
-                ADD COLUMN scheduled_at TEXT
-                """
-            )
-
-        if "notification_sent" not in columns:
-            conn.execute(
-                """
-                ALTER TABLE plan
-                ADD COLUMN notification_sent INTEGER DEFAULT 0
-                """
-            )
-
-        quiz_columns = {
-            row["name"]
-            for row in conn.execute(
-                "PRAGMA table_info(quiz_results)"
-            ).fetchall()
-        }
-
-        if "correct" not in quiz_columns:
-            conn.execute(
-        """
-        ALTER TABLE quiz_results
-        ADD COLUMN correct INTEGER
-        """
-        )
-
-        if "total" not in quiz_columns:
-            conn.execute(
-        """
-        ALTER TABLE quiz_results
-        ADD COLUMN total INTEGER
-        """
-        )
-
-        if "percentage" not in quiz_columns:
-            conn.execute(
-        """
-        ALTER TABLE quiz_results
-        ADD COLUMN percentage REAL
-        """
-        )
-
-        if "evaluation" not in quiz_columns:
-            conn.execute(
-        """
-        ALTER TABLE quiz_results
-        ADD COLUMN evaluation TEXT
-        """
-        )
-
+        """)
 
 @contextmanager
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-
-    # Lets us access columns by name, e.g. row["name"]
     try:
         yield conn
         conn.commit()
     finally:
         conn.close()
-
-
-# --- Small helper functions the tools will call ----------------------
-
 
 def insert_topic(name: str, difficulty: int, est_hours: float) -> int:
     with get_conn() as conn:
@@ -171,25 +73,17 @@ def insert_topic(name: str, difficulty: int, est_hours: float) -> int:
         )
         return cur.lastrowid
 
-
 def get_all_topics() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM topics").fetchall()
         return [dict(r) for r in rows]
 
 def get_topic_by_name(topic_name: str) -> dict | None:
-
     with get_conn() as conn:
-
         row = conn.execute(
-            """
-            SELECT *
-            FROM topics
-            WHERE name = ?
-            """,
+            "SELECT * FROM topics WHERE name = ?",
             (topic_name,),
         ).fetchone()
-
         return dict(row) if row else None
 
 def set_exam(exam_date: str, daily_hours: float):
@@ -201,34 +95,18 @@ def set_exam(exam_date: str, daily_hours: float):
             (exam_date, daily_hours),
         )
 
-
 def get_exam() -> dict | None:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT * FROM exam WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT * FROM exam WHERE id = 1").fetchone()
         return dict(row) if row else None
-
 
 def clear_plan():
     with get_conn() as conn:
         conn.execute("DELETE FROM plan")
 
-
 def clear_future_plan():
-    """
-    Remove future activities so the agent can rebuild
-    the schedule after a quiz result.
-
-    Historical completed activities are preserved.
-    """
     with get_conn() as conn:
-        conn.execute(
-            """
-            DELETE FROM plan
-            WHERE completed = 0
-            """
-        )
+        conn.execute("DELETE FROM plan WHERE completed = 0")
 
 def insert_plan_row(
     topic_id: int,
@@ -241,23 +119,11 @@ def insert_plan_row(
         conn.execute(
             """
             INSERT INTO plan (
-                topic_id,
-                study_date,
-                planned_hours,
-                activity_type,
-                scheduled_at
-            )
-            VALUES (?, ?, ?, ?, ?)
+                topic_id, study_date, planned_hours, activity_type, scheduled_at
+            ) VALUES (?, ?, ?, ?, ?)
             """,
-            (
-                topic_id,
-                study_date,
-                planned_hours,
-                activity_type,
-                scheduled_at,
-            ),
+            (topic_id, study_date, planned_hours, activity_type, scheduled_at),
         )
-
 
 def get_plan() -> list[dict]:
     with get_conn() as conn:
@@ -270,29 +136,18 @@ def get_plan() -> list[dict]:
                 topics.mastered,
                 topics.next_review_date
             FROM plan
-            JOIN topics
-                ON plan.topic_id = topics.id
-            ORDER BY
-                plan.study_date,
-                plan.scheduled_at
+            JOIN topics ON plan.topic_id = topics.id
+            ORDER BY plan.study_date, plan.scheduled_at
             """
         ).fetchall()
-
         return [dict(r) for r in rows]
 
-
-def insert_quiz_result(
-    topic_id: int,
-    quality: int,
-    taken_at: str,
-):
+def insert_quiz_result(topic_id: int, quality: int, taken_at: str):
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO quiz_results (topic_id, quality, taken_at) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO quiz_results (topic_id, quality, taken_at) VALUES (?, ?, ?)",
             (topic_id, quality, taken_at),
         )
-
 
 def update_topic_sm2(
     topic_id: int,
@@ -306,140 +161,56 @@ def update_topic_sm2(
         conn.execute(
             """
             UPDATE topics
-            SET
-                repetitions=?,
-                ease_factor=?,
-                interval_days=?,
-                next_review_date=?,
-                mastered=?
+            SET repetitions=?, ease_factor=?, interval_days=?, next_review_date=?, mastered=?
             WHERE id=?
             """,
-            (
-                repetitions,
-                ease_factor,
-                interval_days,
-                next_review_date,
-                mastered,
-                topic_id,
-            ),
+            (repetitions, ease_factor, interval_days, next_review_date, mastered, topic_id),
         )
 
-
-def get_quiz_history(
-    topic_id: int | None = None,
-) -> list[dict]:
-
+def get_quiz_history(topic_id: int | None = None) -> list[dict]:
     with get_conn() as conn:
-
         if topic_id:
-
             rows = conn.execute(
                 """
-                SELECT
-                    quiz_results.*,
-                    topics.name AS topic_name
+                SELECT quiz_results.*, topics.name AS topic_name
                 FROM quiz_results
-                JOIN topics
-                    ON quiz_results.topic_id = topics.id
+                JOIN topics ON quiz_results.topic_id = topics.id
                 WHERE quiz_results.topic_id = ?
                 ORDER BY quiz_results.taken_at DESC
                 """,
                 (topic_id,),
             ).fetchall()
-
         else:
-
             rows = conn.execute(
                 """
-                SELECT
-                    quiz_results.*,
-                    topics.name AS topic_name
+                SELECT quiz_results.*, topics.name AS topic_name
                 FROM quiz_results
-                JOIN topics
-                    ON quiz_results.topic_id = topics.id
+                JOIN topics ON quiz_results.topic_id = topics.id
                 ORDER BY quiz_results.taken_at DESC
                 """
             ).fetchall()
-
         return [dict(row) for row in rows]
 
 def update_latest_quiz_result(
-    topic_id: int,
-    correct: int,
-    total: int,
-    percentage: float,
-    evaluation: str,
+    topic_id: int, correct: int, total: int, percentage: float, evaluation: str
 ):
     with get_conn() as conn:
         conn.execute(
             """
             UPDATE quiz_results
-            SET
-                correct = ?,
-                total = ?,
-                percentage = ?,
-                evaluation = ?
+            SET correct = ?, total = ?, percentage = ?, evaluation = ?
             WHERE id = (
-                SELECT id
-                FROM quiz_results
+                SELECT id FROM quiz_results
                 WHERE topic_id = ?
-                ORDER BY id DESC
-                LIMIT 1
+                ORDER BY id DESC LIMIT 1
             )
             """,
-            (
-                correct,
-                total,
-                percentage,
-                evaluation,
-                topic_id,
-            ),
+            (correct, total, percentage, evaluation, topic_id),
         )
-
-def get_due_activities(now_iso: str) -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                plan.*,
-                topics.name AS topic_name
-            FROM plan
-            JOIN topics
-                ON plan.topic_id = topics.id
-            WHERE
-                plan.scheduled_at <= ?
-                AND plan.completed = 0
-                AND plan.notification_sent = 0
-            ORDER BY plan.scheduled_at
-            """,
-            (now_iso,),
-        ).fetchall()
-
-        return [dict(r) for r in rows]
-
-
-def mark_notification_sent(plan_id: int):
-    with get_conn() as conn:
-        conn.execute(
-            """
-            UPDATE plan
-            SET notification_sent = 1
-            WHERE id = ?
-            """,
-            (plan_id,),
-        )
-
 
 def mark_plan_completed(plan_id: int):
     with get_conn() as conn:
-        conn.execute(
-            """
-            UPDATE plan
-            SET completed = 1
-            WHERE id = ?
-            """,
-            (plan_id,),
-        )
+        conn.execute("UPDATE plan SET completed = 1 WHERE id = ?", (plan_id,))
 
 def clear_topics():
     with get_conn() as conn:
@@ -448,105 +219,35 @@ def clear_topics():
         conn.execute("DELETE FROM topics")
 
 def save_study_slots(slots: list[dict]):
-    """
-    Replace the student's weekly availability with the
-    newly submitted schedule.
-
-    Each slot:
-        {
-            "weekday": 0,
-            "start_time": "18:00",
-            "end_time": "20:00"
-        }
-
-    weekday:
-        0 = Monday
-        1 = Tuesday
-        ...
-        6 = Sunday
-    """
-
     with get_conn() as conn:
         conn.execute("DELETE FROM study_slots")
-
         for slot in slots:
             conn.execute(
-                """
-                INSERT INTO study_slots (
-                    weekday,
-                    start_time,
-                    end_time
-                )
-                VALUES (?, ?, ?)
-                """,
-                (
-                    slot["weekday"],
-                    slot["start_time"],
-                    slot["end_time"],
-                ),
+                "INSERT INTO study_slots (weekday, start_time, end_time) VALUES (?, ?, ?)",
+                (slot["weekday"], slot["start_time"], slot["end_time"]),
             )
-
 
 def get_study_slots() -> list[dict]:
     with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT *
-            FROM study_slots
-            ORDER BY weekday, start_time
-            """
-        ).fetchall()
-
+        rows = conn.execute("SELECT * FROM study_slots ORDER BY weekday, start_time").fetchall()
         return [dict(row) for row in rows]
-
 
 def get_study_slots_by_weekday() -> dict[int, list[dict]]:
     slots = get_study_slots()
-
-    result = {
-        weekday: []
-        for weekday in range(7)
-    }
-
+    result = {weekday: [] for weekday in range(7)}
     for slot in slots:
         result[slot["weekday"]].append(slot)
-
     return result
 
 def get_upcoming_quizzes() -> list[dict]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT
-                plan.*,
-                topics.name AS topic_name
+            SELECT plan.*, topics.name AS topic_name
             FROM plan
-            JOIN topics
-                ON plan.topic_id = topics.id
-            WHERE
-                plan.activity_type = 'quiz'
-                AND plan.completed = 0
-            ORDER BY
-                plan.scheduled_at
+            JOIN topics ON plan.topic_id = topics.id
+            WHERE plan.activity_type = 'quiz' AND plan.completed = 0
+            ORDER BY plan.scheduled_at
             """
         ).fetchall()
-
         return [dict(row) for row in rows]
-
-def get_plan_activity(plan_id: int) -> dict | None:
-    with get_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT
-                plan.*,
-                topics.name AS topic_name
-            FROM plan
-            JOIN topics
-                ON plan.topic_id = topics.id
-            WHERE plan.id = ?
-            """,
-            (plan_id,),
-        ).fetchone()
-
-        return dict(row) if row else None
-

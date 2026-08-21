@@ -27,7 +27,7 @@
     --quiz: #ef9f63;
 
     --sidebar-width: 250px;
-
+    --sidebar-collapsed-width: 0px;
     --radius-sm: 10px;
     --radius: 16px;
     --radius-lg: 22px;
@@ -70,18 +70,62 @@ body {
    Layout
 ================================================ */
 
+
 .app-shell {
     min-height: 100vh;
-
     display: flex;
+    position: relative;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 16px;
+    background: linear-gradient(180deg, #101722 0%, #0d131d 100%);
+    border-right: 1px solid var(--border);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+}
+
+.app-shell.sidebar-collapsed .sidebar {
+    transform: translateX(-100%);
 }
 
 .main-content {
     width: calc(100% - var(--sidebar-width));
+    margin-left: var(--sidebar-width);
     min-height: 100vh;
-
     padding: 0 42px 60px;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+.app-shell.sidebar-collapsed .main-content {
+    width: 100%;
+    margin-left: 0;
+}
+
+.sidebar-toggle-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 1.2rem;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.sidebar-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--border-strong);
+}
+
+
 
 .page-content {
     max-width: 1500px;

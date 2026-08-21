@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Agent Trace - StudyLoop{% endblock %}
+{% block page_label %}AGENT EXECUTION{% endblock %}
+{% block page_title %}Agent Trace Log{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <h2>Execution Trace</h2>
+    {% if trace %}
+        <div class="trace-container">
+            {% for step in trace %}
+                <div class="trace-step" style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px;">
+                    <h3>Step {{ step.step }} ({{ step.type }})</h3>
+                    {% if step.type == 'tool_call' %}
+                        <p><strong>Tool:</strong> {{ step.tool }}</p>
+                        <p><strong>Arguments:</strong> <code>{{ step.arguments }}</code></p>
+                        <p><strong>Observation:</strong> <code>{{ step.observation }}</code></p>
+                    {% else %}
+                        <p><strong>Content:</strong> {{ step.content }}</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p>No execution trace available for this session.</p>
+    {% endif %}
+</section>
+{% endblock %}
